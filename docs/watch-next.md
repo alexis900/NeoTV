@@ -64,3 +64,20 @@ and preview channels. They live in the TV provider, behind `TvContract.WatchNext
 Source: `createSqlParams()` in `packages/providers/TvProvider/src/com/android/providers/tv/TvProvider.java`
 (AOSP) holds the `READ_TV_LISTINGS` and `searchable` logic; both permissions are defined in that
 module's `AndroidManifest.xml`.
+
+## In the launcher
+
+`continue_watching` in `config.xml` (off by default) shows these rows as a Continue watching row between the
+clock and the dock: `ContinueWatching.java` reads and filters the table (browsable rows only, engaged in the last
+60 days, a "continue" row under 95%, one card per show, ten at most, newest first), `ContinueRow.java` draws it.
+It reads once each time Home comes back, never on a timer, and needs `READ_TV_LISTINGS`, which
+`launcher/build-and-install.sh` grants.
+
+Only local posters are drawn (`content://`, `android.resource://`, `file://`): the launcher has no `INTERNET`
+permission, so rows with `https://` posters get the app's own banner under the title instead. Local posters can
+still be slow, as Jellyfin's provider fetches each one from its server (about four seconds a poster on a Strong
+LEAP-S3), so the row comes up with banners first and swaps each poster in as it arrives, with a small cache
+across Home resumes. A row's `intent_uri` is only followed when it points at the app that published the row.
+
+Seen on a Strong LEAP-S3 (Google TV 14): 24 Watch Next rows, from Disney+ (8), Videoland (6), Jellyfin (6) and
+Netflix (4); seven passed the filters.
