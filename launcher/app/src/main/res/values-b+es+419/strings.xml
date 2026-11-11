@@ -38,6 +38,9 @@
     <string name="shamsi_month_bahman">Bahmán</string>
     <string name="shamsi_month_esfand">Esfand</string>
     <string name="stats_cpu">CPU %1$d%%</string>
+    <string name="continue_watching">Continuar viendo</string>
+    <string name="continue_watching_recent">Añadido recientemente</string>
+    <string name="continue_watching_next_up">Próximos episodios</string>
     <string name="stats_memory">Memoria %1$d / %2$d MB</string>
     <string name="stats_storage">Almacenamiento %1$s libre</string>
     <string name="storage_gb_whole">%1$.0f GB</string>

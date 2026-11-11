@@ -156,6 +156,12 @@ final class Config {
     final boolean showStats;
     /** game_day: the package of an add-on that publishes each team's next game (GameDay); empty = off. */
     final String gameDay;
+    /** Jellyfin server for the Continue watching row (config.xml or theme jellyfin_url); empty = read Watch Next. */
+    final String jellyfinUrl;
+    /** API key for that Jellyfin server (jellyfin_api_key); empty = read Watch Next. */
+    final String jellyfinApiKey;
+    /** Jellyfin user name to read (jellyfin_user); empty = the server's first user. */
+    final String jellyfinUser;
     /** App library pill after the last Home row (config.xml app_library). */
     final boolean appLibrary;
     /** OK directly toggles Home membership in the library (app_library_selection). */
@@ -297,7 +303,10 @@ final class Config {
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
                    Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean homeIgnoreChannelKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean inputsCecStateOnly,
                    int openOnStartNetworkWait, boolean openOnStartOnWake, boolean iconOnlyVpn, String clockFormat, boolean backOpensClock, boolean glowSnap,
-                   boolean settingsKeyClearTask) {
+                   boolean settingsKeyClearTask, String jellyfinUrl, String jellyfinApiKey, String jellyfinUser) {
+        this.jellyfinUrl = jellyfinUrl;
+        this.jellyfinApiKey = jellyfinApiKey;
+        this.jellyfinUser = jellyfinUser;
         this.handleViewInputs = handleViewInputs;
         this.tileMenu = tileMenu;
         this.inputKeycodes = inputKeycodes;
@@ -495,6 +504,9 @@ final class Config {
         boolean homeSettings = res.getBoolean(R.bool.show_home_settings_shortcut);
         boolean showStats = res.getBoolean(R.bool.show_stats);
         String gameDay = res.getString(R.string.game_day).trim();
+        String jellyfinUrl = res.getString(R.string.jellyfin_url).trim();
+        String jellyfinApiKey = res.getString(R.string.jellyfin_api_key).trim();
+        String jellyfinUser = res.getString(R.string.jellyfin_user).trim();
         boolean library = res.getBoolean(R.bool.app_library);
         boolean librarySelection = res.getBoolean(R.bool.app_library_selection);
         boolean libraryOkOpens = res.getBoolean(R.bool.library_ok_opens);
@@ -611,6 +623,9 @@ final class Config {
             homeSettings = bool(json, "show_home_settings_shortcut", homeSettings);
             showStats = bool(json, "show_stats", showStats);
             gameDay = string(json, "game_day", gameDay);
+            jellyfinUrl = string(json, "jellyfin_url", jellyfinUrl).trim();
+            jellyfinApiKey = string(json, "jellyfin_api_key", jellyfinApiKey).trim();
+            jellyfinUser = string(json, "jellyfin_user", jellyfinUser).trim();
             library = bool(json, "app_library", library);
             librarySelection = bool(json, "app_library_selection", librarySelection);
             libraryOkOpens = bool(json, "library_ok_opens", libraryOkOpens);
@@ -727,7 +742,7 @@ final class Config {
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, inputsCecStateOnly,
                 Math.max(0, Math.min(600, openOnStartNetworkWait)), openOnStartOnWake, iconOnlyVpn, clockFormat, backOpensClock, glowSnap,
-                settingsKeyClearTask);
+                settingsKeyClearTask, jellyfinUrl, jellyfinApiKey, jellyfinUser);
     }
 
     /**

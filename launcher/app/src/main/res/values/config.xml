@@ -356,8 +356,9 @@
          0 leaves the Wi-Fi pill as an icon. -->
     <integer name="wifi_label_width">0</integer>
 
-    <!-- The Wi-Fi/Ethernet pill in the top bar. false hides it (on Android 14 with Location off it can
-         only say "Wi-Fi", not the network name). Can also be set with "show_network_pill" in a theme. -->
+    <!-- The Wi-Fi/Ethernet pill in the top bar. false hides it. This fork does not ask for location or
+         ACCESS_WIFI_STATE, so the pill says "Wi-Fi" rather than the network name. Can also be set with
+         "show_network_pill" in a theme. -->
     <bool name="show_network_pill">true</bool>
     <!-- Apps shown as round buttons with their own logo in the top bar, left of the network pill, in this order.
          They leave the grid. Missing apps are skipped. Can also be set with "top_bar_apps" in a theme. -->
@@ -469,6 +470,22 @@
     <!-- One line under the clock: CPU, free memory and free storage. Off by default; a theme can set
          "show_stats": true. Nothing is read, and the clock does not move, while this is false. -->
     <bool name="show_stats">false</bool>
+
+    <!-- A Continue watching row above the dock (docs/watch-next.md). Read once each time Home comes back, never
+         polled. Upstream reads the system's Watch Next table, which needs READ_TV_LISTINGS; this fork reads
+         Jellyfin instead and does not request that permission. Hidden on a screen with no room above the dock.
+         Off by default upstream; on for this TV. -->
+    <bool name="continue_watching">true</bool>
+
+    <!-- With continue_watching, read the row from a Jellyfin server directly instead of the system's Watch Next
+         table: set the server (http://host:8096) and an API key from Jellyfin's Dashboard > API Keys. Either one
+         empty leaves the row hidden here, because this fork does not request READ_TV_LISTINGS for the Watch Next
+         fallback. jellyfin_user picks the account (empty: the server's first user). A theme can set all three
+         (theme JSON), so the key need not be compiled into the APK. This fork adds the INTERNET permission and
+         cleartext HTTP for these two keys only; see docs/watch-next.md. -->
+    <string name="jellyfin_url" translatable="false"></string>
+    <string name="jellyfin_api_key" translatable="false"></string>
+    <string name="jellyfin_user" translatable="false"></string>
 
     <!-- Each team's next game in the F1 panel's place under the clock, rotating with the theme's F1 weekend: the package
          of an add-on that publishes them (the Game Day add-on: io.github.justinnewman.gameday; contract in docs/modules.md).

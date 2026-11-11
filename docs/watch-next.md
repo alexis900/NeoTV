@@ -77,3 +77,59 @@ and preview channels. They live in the TV provider, behind `TvContract.WatchNext
 Source: `createSqlParams()` in `packages/providers/TvProvider/src/com/android/providers/tv/TvProvider.java`
 (AOSP) holds the `READ_TV_LISTINGS` and `searchable` logic; both permissions are defined in that
 module's `AndroidManifest.xml`.
+
+## In the launcher
+
+`continue_watching` in `config.xml` (on by default) shows a Continue watching row between the clock and the
+dock: `ContinueWatching.java` reads and filters the table (browsable rows only, engaged in the last 60 days, a
+"continue" row under 95%, one card per show, ten at most, newest first), `ContinueRow.java` draws it. It reads
+once each time Home comes back, never on a timer. The Watch Next path needs `READ_TV_LISTINGS`; NeoTV does not
+request it, because its row reads Jellyfin (below).
+
+The Watch Next path draws only local posters (`content://`, `android.resource://`, `file://`): it does not fetch
+`https://` posters, so rows with them get the app's own banner under the title instead. Local posters can still be
+slow, as Jellyfin's provider fetches each one from its server (about four seconds a poster on a Strong
+LEAP-S3), so the row comes up with banners first and swaps each poster in as it arrives, with a small cache
+across Home resumes. A row's `intent_uri` is only followed when it points at the app that published the row.
+
+Seen on a Strong LEAP-S3 (Google TV 14): 24 Watch Next rows, from Disney+ (8), Videoland (6), Jellyfin (6) and
+Netflix (4); seven passed the filters.
+
+## From Jellyfin with an API key
+
+NeoTV reads the row from the Jellyfin server itself, without going through Watch Next: useful when the TV's
+client publishes no rows, or when the owner would rather not depend on it. That is why NeoTV adds the
+`INTERNET` permission and cleartext HTTP.
+
+NeoTV's permission set is deliberately small: `INTERNET` (the row), `ACCESS_NETWORK_STATE` (the network
+pill's Wi-Fi/Ethernet and online/offline state) and the optional `WRITE_SECURE_SETTINGS` (only granted by the
+installer with `RESTORE_KEY_SERVICES=1`). It does not request `READ_TV_LISTINGS`, `ACCESS_WIFI_STATE` or
+location: the row no longer reads Watch Next, and the network pill says "Wi-Fi" instead of the SSID.
+
+- `jellyfin_url`: the server, for example `http://192.168.1.50:8096`.
+- `jellyfin_api_key`: a key from Jellyfin's Dashboard → API Keys → +. It travels in the `Authorization` header
+  (and `X-Emby-Token`), never in a URL or a log line.
+- `jellyfin_user`: the account to read, by name; empty takes the server's first user.
+
+Set them in `config.xml`, or better in a theme's `config.json` pushed from a computer (`tools/theme.sh`), so the
+key is not compiled into the APK and can be revoked in Jellyfin whenever you like. With either `jellyfin_url` or
+`jellyfin_api_key` empty the row stays hidden in NeoTV.
+
+The row belongs to Jellyfin's own dock tile: it appears while that tile has focus and hides again
+when the owner moves to another app, so the shelf is not offered over Netflix or YouTube. While the shelf is on
+screen it takes the space of the dock's big title (the tile and the row's caption already name the app), which
+makes the cards about 1.7 times larger than a plain row's.
+
+The remote's **Menu** key cycles the list the row reads: Continue watching (`/Items/Resume`), Recently added
+(`/Items/Latest`) and Next up (`/Shows/NextUp`). It works on Jellyfin's own tile (instead of the app menu) and on
+a card inside the row, and the choice is remembered across restarts. The same selector works with the D-pad alone:
+**Left** on the row's first card goes to the previous list and **Right** on its last card to the next, and the
+caption shows `‹ … ›` as the hint. An empty list steps to the next one in the direction moved, so Next up stays
+out of the way until a series has an unwatched episode.
+
+The row calls `GET /Users` and `GET /Users/<id>/Items/Resume`, keeps the ten newest under 95%, one card per show,
+and draws each poster from `GET /Items/{id}/Images/Primary` (the series' poster for an episode). A card opens the
+item in the installed client: Jellyfin for Android TV takes the id in `StartupActivity`'s `ItemId` extra and
+Wholphin in `wholphin://view?itemId=`, the same way each client's own Watch Next cards do; Jellyfin for Android
+and Findroid have no such entry point, so their cards open the app.
+`http://` needs the cleartext flag NeoTV sets; `https://` works when the TV trusts the certificate.

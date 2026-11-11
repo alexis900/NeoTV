@@ -37,8 +37,6 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.net.Uri;
-import android.net.wifi.WifiInfo;
-import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -52,12 +50,14 @@ import android.text.Spanned;
 import android.text.TextPaint;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.SoundEffectConstants;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.ViewTreeObserver;
 import android.view.Window;
 import android.view.animation.AnimationUtils;
@@ -197,6 +197,13 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private boolean lunar;
     private int lunarOffset;
     private TextView stats;
+    /** config.xml continue_watching: the Watch Next row above the dock; null when off. */
+    private ContinueRow continueRow;
+    /** Jellyfin server for that row (config.xml/theme jellyfin_url + jellyfin_api_key); empty reads Watch Next. */
+    private String jellyfinUrl = "", jellyfinApiKey = "", jellyfinUser = "";
+    /** Which Jellyfin list the row shows (ContinueWatching.LIST_*); the remote's Menu key cycles it. */
+    private int continueList = ContinueWatching.LIST_RESUME;
+    private static final String CONTINUE_LIST_KEY = "continue_list";
     private List<RaceWeekend.Race> raceCalendar;
     private View racePanel;
     private TextView raceKicker, raceHeadline, raceSessions;
@@ -462,6 +469,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         density = getResources().getDisplayMetrics().density;
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
+        jellyfinUrl = cfg.jellyfinUrl;
+        jellyfinApiKey = cfg.jellyfinApiKey;
+        jellyfinUser = cfg.jellyfinUser;
         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
         clockFormat = cfg.clockFormat;
         ClockFormat.apply(getWindow().getDecorView(), clockFormat);
@@ -702,6 +712,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         Order savedOrder = Order.load(Order.file(this));
         adapter.setSavedOrder(Order.ranks(savedOrder, dockApps), Order.docked(savedOrder, dockApps));
         grid.setAdapter(adapter);
+        setUpContinueRow();
 
         // tvOS layout: push the dock row towards the bottom of the screen, leaving room for
         // rows_below_dock grid rows under it; the rest of the grid stays below until you press Down.
@@ -1104,6 +1115,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         restartIdleClock();
         promptsPaused = false;
+        loadContinueRow();
         if (grid.getAdapter() == null) grid.setAdapter(adapter);   // dropped by onTrimMemory
         switch (tileRefresh.onResume(packagesChangedSinceRebuild())) {
             case REBUILD:
@@ -1126,8 +1138,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (cinematic && heroMeta != null && lastFocused >= 0 && lastFocused < adapter.appCount()) updateHeroMeta(lastFocused);
         // The network and Inputs pills keep their state while Home is in the background, and callbacks update them
         // when the network or the inputs change, so this refresh only catches anything missed. Its binder calls
-        // (about 7 ms on a TCL C755, most of it WifiManager.getConnectionInfo) would hold up the first frame back
-        // on Home, so after the first resume it runs once that frame is drawn.
+        // (about 7 ms on a TCL C755) would hold up the first frame back on Home, so after the first resume it runs
+        // once that frame is drawn.
         if (pillsShown) {
             refreshPillsAfterNextDraw();
         } else {
@@ -1437,6 +1449,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 homeHoldAppKeys.get(event.getKeyCode()))) return true;
         if (handleSettingsKey(event)) return true;
         if (holdOk(event)) return true;
+        if (!reordering && openPopup == null && cardPrompt == null
+                && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
+            int position = focusedTilePosition();
+            // Jellyfin's own tile cycles the row's list, even when tile_menu is off.
+            if (menuCyclesContinueRow(position)) {
+                if (RemoteKeys.menuReleased(event.getAction(), event.getFlags())) cycleContinueList(1);
+                return true;
+            }
+        }
         if (tileMenuEnabled && !reordering && openPopup == null && cardPrompt == null
                 && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
             int position = focusedTilePosition();
@@ -1805,9 +1826,26 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         appLibrary.show();
     }
 
+    /**
+     * The Jellyfin row belongs to Jellyfin's tile: with jellyfin_url and jellyfin_api_key set (API mode) it shows
+     * while a Jellyfin client's dock tile is focused and hides for every other app, so it is not offered over
+     * Netflix or YouTube. The Watch Next row (no API key) keeps the whole dock row, as it always did.
+     */
+    private boolean rowOfferedAt(int position) {
+        if (jellyfinUrl.isEmpty() || jellyfinApiKey.isEmpty()) return true;
+        String key = adapter.keyAt(position);
+        int slash = key == null ? -1 : key.indexOf('/');
+        return slash > 0 && ContinueWatching.isJellyfinClient(key.substring(0, slash));
+    }
+
     @Override
     public void onTileFocused(int position, View card) {
         lastFocused = position;
+        if (continueRow != null) {
+            continueRow.setWanted(position < COLUMNS && rowOfferedAt(position));
+            layoutContinueRow();
+            updateTopBarDown();
+        }
         lastFocusedKey = adapter.keyAt(position);
         // Focus restored before the first layout (cold start): the tile has no size yet, and the glass
         // would be sized to 2*pad. Run again once the tile is laid out.
@@ -1916,6 +1954,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
+        // The Jellyfin row takes this space: a bigger shelf is worth more than the dock's big title, which the
+        // dock tile and the row's own caption already say.
+        if (continueRow != null && continueApiMode() && continueRow.isShowing() && rowOfferedAt(position)) {
+            hideHero();
+            return;
+        }
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
@@ -2252,6 +2296,176 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         else glass.setAlpha(0f);
     }
 
+    // ---- Continue watching (config.xml continue_watching) ------------------------------------------
+
+    /** Off unless configured, and only with a dock row that has the room above it (not single_row). */
+    private void setUpContinueRow() {
+        if (!getResources().getBoolean(R.bool.continue_watching) || !dockRow || singleRow) return;
+        continueList = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE)
+                .getInt(CONTINUE_LIST_KEY, ContinueWatching.LIST_RESUME);
+        if (continueList < 0 || continueList >= ContinueWatching.LIST_COUNT) {
+            continueList = ContinueWatching.LIST_RESUME;
+        }
+        continueRow = new ContinueRow(this, new ContinueRow.Host() {
+            @Override public void onRowFocused() {
+                hideGlass();
+                hideHero();
+            }
+
+            @Override public void onRowUp() {
+                firstTopButton().requestFocus();
+            }
+
+            @Override public void onRowDown() {
+                focusTile(lastFocused < COLUMNS ? lastFocused : 0);
+            }
+
+            @Override public boolean inTopBar(View view) {
+                ViewGroup bar = findViewById(R.id.topButtons);
+                for (ViewParent p = view.getParent(); p != null; p = p.getParent()) if (p == bar) return true;
+                return false;
+            }
+
+            @Override public void onRowOpen(ContinueWatching.Item item) {
+                Intent i = ContinueWatching.intentFor(MainActivity.this, item);
+                if (i == null) return;
+                try {
+                    startActivity(i);
+                } catch (RuntimeException e) {
+                    // ActivityNotFound, or a SecurityException for an intent the app did not export.
+                    Log.w(ContinueWatching.TAG, "could not open " + item.pkg + ": " + e);
+                    Intent fallback = getPackageManager().getLeanbackLaunchIntentForPackage(item.pkg);
+                    if (fallback != null) startActivity(fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                }
+            }
+
+            @Override public void onRowMenu(int step) {
+                cycleContinueList(step);
+            }
+
+            @Override public boolean canCycleLists() {
+                return continueRow != null && continueApiMode();
+            }
+        }, continueCaption(continueList));
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.setMarginStart((int) (56 * density));
+        root.addView(continueRow, root.indexOfChild(glass), lp);
+        // Under the clock block, and only where it clears the dock's title: on a screen too short for both, the
+        // row stays hidden rather than drawing over the title.
+        root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> layoutContinueRow());
+    }
+
+    /** Places the row under the clock and decides whether it fits; also run when the focused tile changes. */
+    private void layoutContinueRow() {
+        if (continueRow == null) return;
+        View anchor = stats.getVisibility() == View.VISIBLE ? stats : findViewById(R.id.leftBlock);
+        Rect a = new Rect(0, 0, anchor.getWidth(), anchor.getHeight());
+        root.offsetDescendantRectToMyCoords(anchor, a);
+        float y = a.bottom + 8 * density;
+        if (continueRow.getY() != y) continueRow.setY(y);
+        Rect g = new Rect(0, 0, grid.getWidth(), grid.getHeight());
+        root.offsetDescendantRectToMyCoords(grid, g);
+        float dockTop = g.top + grid.getPaddingTop();
+        float rowBottom = y + (13 + 6 + 8 + ContinueRow.CARD_H_DP + 8) * density;
+        // While the row is on screen it owns the space the big dock title would use (showHero hides it), so
+        // the shelf can be that much taller.
+        boolean rowOwnsHeroSpace = continueRow.isWanted() && continueApiMode();
+        float heroTop = dockTop - 40 * density - (rowOwnsHeroSpace ? 0 : hero.getHeight());
+        continueRow.setFits(rowBottom <= heroTop);
+    }
+
+    /** Once per resume, off the main thread: a provider query and a few local posters. No polling. */
+    private void loadContinueRow() {
+        loadContinueRow(continueList, ContinueWatching.LIST_COUNT, 1);
+    }
+
+    /**
+     * Loads one Jellyfin list. An empty one steps to the next in the direction the owner was moving (Next up
+     * stays empty until a series has an unwatched episode), so Menu or an arrow never leaves an empty shelf.
+     */
+    private void loadContinueRow(int list, int attemptsLeft, int step) {
+        if (continueRow == null) return;
+        Context app = getApplicationContext();
+        String url = jellyfinUrl, key = jellyfinApiKey, user = jellyfinUser;
+        boolean api = !url.isEmpty() && !key.isEmpty();
+        new Thread(() -> {
+            List<ContinueWatching.Item> items = api
+                    ? ContinueWatching.loadJellyfin(app, url, key, user, list)
+                    : ContinueWatching.load(app);
+            if (api && items.isEmpty() && list != ContinueWatching.LIST_RESUME && attemptsLeft > 1) {
+                int next = (list + step % ContinueWatching.LIST_COUNT + ContinueWatching.LIST_COUNT)
+                        % ContinueWatching.LIST_COUNT;
+                handler.post(() -> {
+                    if (continueRow == null || isFinishing() || isDestroyed()) return;
+                    continueList = next;
+                    rememberContinueList();
+                    continueRow.setCaption(continueCaption(next));
+                    loadContinueRow(next, attemptsLeft - 1, step);
+                });
+                return;
+            }
+            handler.post(() -> {
+                if (continueRow == null || isFinishing() || isDestroyed()) return;
+                continueRow.setItems(items);
+                // The row is now on screen: its shelf needs the big dock title's space.
+                if (continueRow.isShowing()) hideHero();
+                updateTopBarDown();
+            });
+            // Then the posters, each swapped in as it arrives: the row does not wait for the slowest one.
+            for (ContinueWatching.Item item : items) {
+                if (isFinishing() || isDestroyed()) return;
+                if (ContinueWatching.loadPoster(app, item)) handler.post(() -> {
+                    if (continueRow != null) continueRow.showPoster(item);
+                });
+            }
+        }, "continue-watching").start();
+    }
+
+    private String continueCaption(int list) {
+        String name;
+        if (list == ContinueWatching.LIST_RECENT) name = getString(R.string.continue_watching_recent);
+        else if (list == ContinueWatching.LIST_NEXT_UP) name = getString(R.string.continue_watching_next_up);
+        else name = getString(R.string.continue_watching);
+        // The arrows are the D-pad hint: Left at the row's start / Right at its end changes the list.
+        return continueApiMode() ? "\u2039  " + name + "  \u203a" : name;
+    }
+
+    private void rememberContinueList() {
+        getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).edit()
+                .putInt(CONTINUE_LIST_KEY, continueList).apply();
+    }
+
+    /** True when the row reads Jellyfin's API, the only mode with more than one list to cycle. */
+    private boolean continueApiMode() {
+        return !jellyfinUrl.isEmpty() && !jellyfinApiKey.isEmpty();
+    }
+
+    /** True when the Menu key on this tile cycles the row's list instead of opening the app menu. */
+    private boolean menuCyclesContinueRow(int position) {
+        return continueRow != null && position >= 0 && position < COLUMNS
+                && continueApiMode() && rowOfferedAt(position);
+    }
+
+    /** Continue watching → Recently added → Next up → back (or the other way for -1), then reload the row. */
+    private void cycleContinueList(int step) {
+        if (continueRow == null || !continueApiMode()) return;
+        continueList = (continueList + step % ContinueWatching.LIST_COUNT + ContinueWatching.LIST_COUNT)
+                % ContinueWatching.LIST_COUNT;
+        rememberContinueList();
+        continueRow.setCaption(continueCaption(continueList));
+        loadContinueRow(continueList, ContinueWatching.LIST_COUNT, step);
+    }
+
+    /** The top bar's Down goes to the row while it is on screen, to the grid otherwise. */
+    private void updateTopBarDown() {
+        int target = continueRow == null ? View.NO_ID : continueRow.firstCardId();
+        ViewGroup bar = findViewById(R.id.topButtons);
+        for (int i = 0; i < bar.getChildCount(); i++) {
+            bar.getChildAt(i).setNextFocusDownId(target != View.NO_ID ? target : R.id.grid);
+        }
+    }
+
     // ---- optional system stats (config.xml show_stats) --------------------------------------------
 
     /** Background reader. Started only while Home is resumed and show_stats is on. */
@@ -2463,7 +2677,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     rtlAppGrid, keyCode == KeyEvent.KEYCODE_DPAD_LEFT);
         }
         if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
-            if (position < COLUMNS) return false;          // dock row: let focus move to the top bar
+            if (position < COLUMNS) {                      // dock row: the Continue watching row, else the top bar
+                if (continueRow == null || !continueRow.isShowing()) return false;
+                continueRow.focusCard();
+                grid.playSoundEffect(SoundEffectConstants.NAVIGATION_UP);
+                return true;
+            }
             target = position - COLUMNS;
         } else {
             int lastRowStart = ((count - 1) / COLUMNS) * COLUMNS;
@@ -2482,6 +2701,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override public void onLibraryFocused() {
         libraryFocusPending = false;
+        if (continueRow != null) continueRow.setWanted(false);
         hideGlass();
         hideHero();
     }
@@ -2964,14 +3184,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 flame = 4;
                 steady = true;
             } else if (wifi) {
-                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-                WifiInfo info = wm != null ? wm.getConnectionInfo() : null;
-                String ssid = info != null ? info.getSSID() : null;
-                flame = info != null ? Math.max(1, Math.min(4, WifiManager.calculateSignalLevel(info.getRssi(), 5))) : 3;
-                if (ssid != null) {
-                    ssid = ssid.replace("\"", "").trim();
-                    if (!ssid.isEmpty() && !ssid.contains("unknown") && !ssid.equals("0x")) text = ssid;
-                }
+                // The fork does not hold ACCESS_WIFI_STATE or location, so it cannot read the SSID or the
+                // signal; the pill says "Wi-Fi" and the festive light takes the online branch below.
+                flame = 3;
             }
         } catch (Exception ignored) {
         }
@@ -3333,8 +3548,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      *  itself, ahead of the standard way, for firmware that answers the channel URI with "unsupported"
      *  (Redmi X65, MiTV-NSOP0: com.xiaomi.mitv.tvplayer/.ExternalSourceActivity). With `input_uri_scheme` set (YaOS: live-tv) the same URI goes out
      *  with that scheme and no MIME type. A player guarded by a permission this build does not declare
-     *  throws SecurityException, which used to take Home down with it (YaOS before the manifest asked
-     *  for ACCESS_TV_SOURCE). */
+     *  throws SecurityException; every start below catches it and falls through to the next way. This fork
+     *  does not request ACCESS_TV_SOURCE, so a YaOS set loses the vendor live player but Home stays up. */
     private void openInput(String inputId) {
         // A CEC device is a child input of its HDMI port; the vendor source number belongs to the port
         // (MiTV-MFFU0). Only that lookup uses the parent: the generic path below still opens the child.

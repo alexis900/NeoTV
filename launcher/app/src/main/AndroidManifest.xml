@@ -5,22 +5,20 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
-    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
 
+    <!-- The network pill reads ConnectivityManager's transports to say Wi-Fi/Ethernet and online/offline.
+         This fork does not read the SSID, so it asks for neither location nor ACCESS_WIFI_STATE. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <!-- Needed since Android 10 to read the Wi-Fi network name for the network pill. Never requested at
-         runtime: build-and-install grants it with pm grant, so lint's Android 12 "ask for COARSE with
-         FINE" rule does not apply here. -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
-        tools:ignore="CoarseFineLocation" />
+    <!-- This fork's Continue watching row reads a Jellyfin server directly (config.xml jellyfin_url +
+         jellyfin_api_key, docs/watch-next.md). Upstream's launcher has no network access at all; without the
+         two keys nothing here opens a connection. The row no longer reads the system's Watch Next table, so
+         READ_TV_LISTINGS is not requested either. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Puts the remote's accessibility helpers back after a force stop of this app took them off the enabled
-         list (ServiceRepair). Granted with pm grant by build-and-install when a helper is enabled. -->
+         list (ServiceRepair). Granted with pm grant by build-and-install only with RESTORE_KEY_SERVICES=1;
+         it stays un-granted otherwise. -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
-    <!-- YaOS (Yandex TV OS): HDMI, AV and the tuner all play in com.yandex.tv.live, whose activities require
-         this permission (protection level normal, so it is granted at install). Ignored on other TVs. -->
-    <uses-permission android:name="yandex.tv.permission.ACCESS_TV_SOURCE" />
 
     <!-- Android 11+ package visibility: lets the launcher list the TV apps it shows as tiles, and the
          apps that declare a module card (docs/specs/card.md). -->
@@ -76,6 +74,7 @@
         android:banner="@drawable/banner"
         android:theme="@style/Theme.TvHome"
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:localeConfig="@xml/locales_config">
 
         <activity

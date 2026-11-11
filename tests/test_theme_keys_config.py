@@ -64,6 +64,19 @@ QUERIES_PACKAGE = re.compile(r'<package\s+android:name="([^"]+)"')
 EXEMPT = {
     "latitude": "docs/sky.md: the sky's place, a build setting no theme can move",
     "longitude": "docs/sky.md: the sky's place, a build setting no theme can move",
+    "continue_watching": "docs/watch-next.md: a build setting, as this fork reads the row from Jellyfin",
+    "jellyfin_url": "docs/watch-next.md: the Jellyfin server the row reads from, a build setting like continue_watching",
+    "jellyfin_api_key": "docs/watch-next.md: that server's API key, a build setting kept out of the shared Keys table",
+    "jellyfin_user": "docs/watch-next.md: the account the row reads, a build setting",
+}
+# Where each exempt key is read, so an exemption only lasts while the page it points to is still right.
+EXEMPT_READERS = {
+    "latitude": ("SkyView.java", "R.string.latitude"),
+    "longitude": ("SkyView.java", "R.string.longitude"),
+    "continue_watching": ("MainActivity.java", "R.bool.continue_watching"),
+    "jellyfin_url": ("Config.java", "R.string.jellyfin_url"),
+    "jellyfin_api_key": ("Config.java", "R.string.jellyfin_api_key"),
+    "jellyfin_user": ("Config.java", "R.string.jellyfin_user"),
 }
 
 
@@ -251,12 +264,13 @@ class KeysTableCoversConfigXmlTest(unittest.TestCase):
         # latitude and longitude stay out of the table (tests/test_sky_place_note.py requires it), so
         # they may only stay out while they are what that page describes: config.xml lines SkyView reads.
         config = config_keys(self.config)
-        sky = SKY_VIEW.read_text(encoding="utf-8")
         for name in EXEMPT:
             with self.subTest(key=name):
                 self.assertIn(name, config, f"`{name}` is gone from config.xml: drop its EXEMPT entry")
-                self.assertIn(f"R.string.{name}", sky, f"SkyView.java no longer reads `{name}`: is the "
-                                                      f"docs/sky.md page still right?")
+                reader, ref = EXEMPT_READERS[name]
+                source = (SKY_VIEW.parent / reader).read_text(encoding="utf-8")
+                self.assertIn(ref, source, f"{reader} no longer reads `{name}`: is "
+                                           f"{EXEMPT[name].split(':')[0]} still right?")
                 self.assertNotIn(name, table_keys(self.text),
                                  f"`{name}` is in the Keys table now: drop its EXEMPT entry")
 
