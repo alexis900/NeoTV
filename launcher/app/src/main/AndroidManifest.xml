@@ -9,6 +9,10 @@
 
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- This fork's Continue watching row can read a Jellyfin server directly (config.xml jellyfin_url +
+         jellyfin_api_key, docs/watch-next.md). Upstream's launcher has no network access at all; without the
+         two keys nothing here opens a connection. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- The Continue watching row (config.xml continue_watching): reads the Watch Next table. A runtime
          permission, granted by build-and-install with pm grant rather than asked for on screen. -->
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
@@ -79,6 +83,7 @@
         android:banner="@drawable/banner"
         android:theme="@style/Theme.TvHome"
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:localeConfig="@xml/locales_config">
 
         <activity

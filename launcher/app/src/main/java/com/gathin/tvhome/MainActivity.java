@@ -200,6 +200,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView stats;
     /** config.xml continue_watching: the Watch Next row above the dock; null when off. */
     private ContinueRow continueRow;
+    /** Jellyfin server for that row (config.xml/theme jellyfin_url + jellyfin_api_key); empty reads Watch Next. */
+    private String jellyfinUrl = "", jellyfinApiKey = "", jellyfinUser = "";
+    /** Which Jellyfin list the row shows (ContinueWatching.LIST_*); the remote's Menu key cycles it. */
+    private int continueList = ContinueWatching.LIST_RESUME;
+    private static final String CONTINUE_LIST_KEY = "continue_list";
     private List<RaceWeekend.Race> raceCalendar;
     private View racePanel;
     private TextView raceKicker, raceHeadline, raceSessions;
@@ -457,6 +462,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         density = getResources().getDisplayMetrics().density;
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
+        jellyfinUrl = cfg.jellyfinUrl;
+        jellyfinApiKey = cfg.jellyfinApiKey;
+        jellyfinUser = cfg.jellyfinUser;
         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
         clockFormat = cfg.clockFormat;
         ClockFormat.apply(getWindow().getDecorView(), clockFormat);
@@ -1423,6 +1431,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 homeHoldAppKeys.get(event.getKeyCode()))) return true;
         if (handleSettingsKey(event)) return true;
         if (holdOk(event)) return true;
+        if (!reordering && openPopup == null && cardPrompt == null
+                && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
+            int position = focusedTilePosition();
+            // Jellyfin's own tile cycles the row's list, even when tile_menu is off.
+            if (menuCyclesContinueRow(position)) {
+                if (RemoteKeys.menuReleased(event.getAction(), event.getFlags())) cycleContinueList(1);
+                return true;
+            }
+        }
         if (tileMenuEnabled && !reordering && openPopup == null && cardPrompt == null
                 && event.getKeyCode() == KeyEvent.KEYCODE_MENU) {
             int position = focusedTilePosition();
@@ -1787,11 +1804,24 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         appLibrary.show();
     }
 
+    /**
+     * The Jellyfin row belongs to Jellyfin's tile: with jellyfin_url and jellyfin_api_key set (API mode) it shows
+     * while a Jellyfin client's dock tile is focused and hides for every other app, so it is not offered over
+     * Netflix or YouTube. The Watch Next row (no API key) keeps the whole dock row, as it always did.
+     */
+    private boolean rowOfferedAt(int position) {
+        if (jellyfinUrl.isEmpty() || jellyfinApiKey.isEmpty()) return true;
+        String key = adapter.keyAt(position);
+        int slash = key == null ? -1 : key.indexOf('/');
+        return slash > 0 && ContinueWatching.isJellyfinClient(key.substring(0, slash));
+    }
+
     @Override
     public void onTileFocused(int position, View card) {
         lastFocused = position;
         if (continueRow != null) {
-            continueRow.setWanted(position < COLUMNS);
+            continueRow.setWanted(position < COLUMNS && rowOfferedAt(position));
+            layoutContinueRow();
             updateTopBarDown();
         }
         lastFocusedKey = adapter.keyAt(position);
@@ -1902,6 +1932,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
+        // The Jellyfin row takes this space: a bigger shelf is worth more than the dock's big title, which the
+        // dock tile and the row's own caption already say.
+        if (continueRow != null && continueApiMode() && continueRow.isShowing() && rowOfferedAt(position)) {
+            hideHero();
+            return;
+        }
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
         float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
@@ -2243,6 +2279,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     /** Off unless configured, and only with a dock row that has the room above it (not single_row). */
     private void setUpContinueRow() {
         if (!getResources().getBoolean(R.bool.continue_watching) || !dockRow || singleRow) return;
+        continueList = getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE)
+                .getInt(CONTINUE_LIST_KEY, ContinueWatching.LIST_RESUME);
+        if (continueList < 0 || continueList >= ContinueWatching.LIST_COUNT) {
+            continueList = ContinueWatching.LIST_RESUME;
+        }
         continueRow = new ContinueRow(this, new ContinueRow.Host() {
             @Override public void onRowFocused() {
                 hideGlass();
@@ -2275,37 +2316,78 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                     if (fallback != null) startActivity(fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
                 }
             }
-        }, getString(R.string.continue_watching));
+
+            @Override public void onRowMenu(int step) {
+                cycleContinueList(step);
+            }
+
+            @Override public boolean canCycleLists() {
+                return continueRow != null && continueApiMode();
+            }
+        }, continueCaption(continueList));
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMarginStart((int) (56 * density));
         root.addView(continueRow, root.indexOfChild(glass), lp);
         // Under the clock block, and only where it clears the dock's title: on a screen too short for both, the
         // row stays hidden rather than drawing over the title.
-        root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
-            View anchor = stats.getVisibility() == View.VISIBLE ? stats : findViewById(R.id.leftBlock);
-            Rect a = new Rect(0, 0, anchor.getWidth(), anchor.getHeight());
-            root.offsetDescendantRectToMyCoords(anchor, a);
-            float y = a.bottom + 8 * density;
-            if (continueRow.getY() != y) continueRow.setY(y);
-            Rect g = new Rect(0, 0, grid.getWidth(), grid.getHeight());
-            root.offsetDescendantRectToMyCoords(grid, g);
-            float dockTop = g.top + grid.getPaddingTop();
-            float rowBottom = y + (13 + 6 + 12 + ContinueRow.CARD_H_DP + 12) * density;
-            float heroTop = dockTop - 40 * density - hero.getHeight();
-            continueRow.setFits(rowBottom <= heroTop);
-        });
+        root.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> layoutContinueRow());
+    }
+
+    /** Places the row under the clock and decides whether it fits; also run when the focused tile changes. */
+    private void layoutContinueRow() {
+        if (continueRow == null) return;
+        View anchor = stats.getVisibility() == View.VISIBLE ? stats : findViewById(R.id.leftBlock);
+        Rect a = new Rect(0, 0, anchor.getWidth(), anchor.getHeight());
+        root.offsetDescendantRectToMyCoords(anchor, a);
+        float y = a.bottom + 8 * density;
+        if (continueRow.getY() != y) continueRow.setY(y);
+        Rect g = new Rect(0, 0, grid.getWidth(), grid.getHeight());
+        root.offsetDescendantRectToMyCoords(grid, g);
+        float dockTop = g.top + grid.getPaddingTop();
+        float rowBottom = y + (13 + 6 + 8 + ContinueRow.CARD_H_DP + 8) * density;
+        // While the row is on screen it owns the space the big dock title would use (showHero hides it), so
+        // the shelf can be that much taller.
+        boolean rowOwnsHeroSpace = continueRow.isWanted() && continueApiMode();
+        float heroTop = dockTop - 40 * density - (rowOwnsHeroSpace ? 0 : hero.getHeight());
+        continueRow.setFits(rowBottom <= heroTop);
     }
 
     /** Once per resume, off the main thread: a provider query and a few local posters. No polling. */
     private void loadContinueRow() {
+        loadContinueRow(continueList, ContinueWatching.LIST_COUNT, 1);
+    }
+
+    /**
+     * Loads one Jellyfin list. An empty one steps to the next in the direction the owner was moving (Next up
+     * stays empty until a series has an unwatched episode), so Menu or an arrow never leaves an empty shelf.
+     */
+    private void loadContinueRow(int list, int attemptsLeft, int step) {
         if (continueRow == null) return;
         Context app = getApplicationContext();
+        String url = jellyfinUrl, key = jellyfinApiKey, user = jellyfinUser;
+        boolean api = !url.isEmpty() && !key.isEmpty();
         new Thread(() -> {
-            List<ContinueWatching.Item> items = ContinueWatching.load(app);
+            List<ContinueWatching.Item> items = api
+                    ? ContinueWatching.loadJellyfin(app, url, key, user, list)
+                    : ContinueWatching.load(app);
+            if (api && items.isEmpty() && list != ContinueWatching.LIST_RESUME && attemptsLeft > 1) {
+                int next = (list + step % ContinueWatching.LIST_COUNT + ContinueWatching.LIST_COUNT)
+                        % ContinueWatching.LIST_COUNT;
+                handler.post(() -> {
+                    if (continueRow == null || isFinishing() || isDestroyed()) return;
+                    continueList = next;
+                    rememberContinueList();
+                    continueRow.setCaption(continueCaption(next));
+                    loadContinueRow(next, attemptsLeft - 1, step);
+                });
+                return;
+            }
             handler.post(() -> {
                 if (continueRow == null || isFinishing() || isDestroyed()) return;
                 continueRow.setItems(items);
+                // The row is now on screen: its shelf needs the big dock title's space.
+                if (continueRow.isShowing()) hideHero();
                 updateTopBarDown();
             });
             // Then the posters, each swapped in as it arrives: the row does not wait for the slowest one.
@@ -2316,6 +2398,41 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 });
             }
         }, "continue-watching").start();
+    }
+
+    private String continueCaption(int list) {
+        String name;
+        if (list == ContinueWatching.LIST_RECENT) name = getString(R.string.continue_watching_recent);
+        else if (list == ContinueWatching.LIST_NEXT_UP) name = getString(R.string.continue_watching_next_up);
+        else name = getString(R.string.continue_watching);
+        // The arrows are the D-pad hint: Left at the row's start / Right at its end changes the list.
+        return continueApiMode() ? "\u2039  " + name + "  \u203a" : name;
+    }
+
+    private void rememberContinueList() {
+        getSharedPreferences(Config.SETTINGS_NAME, MODE_PRIVATE).edit()
+                .putInt(CONTINUE_LIST_KEY, continueList).apply();
+    }
+
+    /** True when the row reads Jellyfin's API, the only mode with more than one list to cycle. */
+    private boolean continueApiMode() {
+        return !jellyfinUrl.isEmpty() && !jellyfinApiKey.isEmpty();
+    }
+
+    /** True when the Menu key on this tile cycles the row's list instead of opening the app menu. */
+    private boolean menuCyclesContinueRow(int position) {
+        return continueRow != null && position >= 0 && position < COLUMNS
+                && continueApiMode() && rowOfferedAt(position);
+    }
+
+    /** Continue watching → Recently added → Next up → back (or the other way for -1), then reload the row. */
+    private void cycleContinueList(int step) {
+        if (continueRow == null || !continueApiMode()) return;
+        continueList = (continueList + step % ContinueWatching.LIST_COUNT + ContinueWatching.LIST_COUNT)
+                % ContinueWatching.LIST_COUNT;
+        rememberContinueList();
+        continueRow.setCaption(continueCaption(continueList));
+        loadContinueRow(continueList, ContinueWatching.LIST_COUNT, step);
     }
 
     /** The top bar's Down goes to the row while it is on screen, to the grid otherwise. */

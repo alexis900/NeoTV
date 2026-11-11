@@ -65,12 +65,18 @@ EXEMPT = {
     "latitude": "docs/sky.md: the sky's place, a build setting no theme can move",
     "longitude": "docs/sky.md: the sky's place, a build setting no theme can move",
     "continue_watching": "docs/watch-next.md: a build setting, as the row needs READ_TV_LISTINGS granted at install",
+    "jellyfin_url": "docs/watch-next.md: the Jellyfin server the row reads from, a build setting like continue_watching",
+    "jellyfin_api_key": "docs/watch-next.md: that server's API key, a build setting kept out of the shared Keys table",
+    "jellyfin_user": "docs/watch-next.md: the account the row reads, a build setting",
 }
 # Where each exempt key is read, so an exemption only lasts while the page it points to is still right.
 EXEMPT_READERS = {
     "latitude": ("SkyView.java", "R.string.latitude"),
     "longitude": ("SkyView.java", "R.string.longitude"),
     "continue_watching": ("MainActivity.java", "R.bool.continue_watching"),
+    "jellyfin_url": ("Config.java", "R.string.jellyfin_url"),
+    "jellyfin_api_key": ("Config.java", "R.string.jellyfin_api_key"),
+    "jellyfin_user": ("Config.java", "R.string.jellyfin_user"),
 }
 
 

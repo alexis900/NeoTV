@@ -41,15 +41,22 @@ final class ContinueRow extends LinearLayout {
 
         void onRowOpen(ContinueWatching.Item item);
 
+        /** Cycle the list the row reads: -1 the previous one, +1 the next (Jellyfin's API mode). */
+        void onRowMenu(int step);
+
+        /** True when there is more than one list to cycle (Jellyfin's API mode). */
+        boolean canCycleLists();
+
         /** True for a view in the top bar, whose Down is allowed to land here. */
         boolean inTopBar(View view);
     }
 
-    static final int CARD_W_DP = 160, CARD_H_DP = 90;
+    static final int CARD_W_DP = 267, CARD_H_DP = 150;
     private static final float FOCUS_SCALE = 1.08f;
 
     private final Host host;
     private final float density;
+    private final TextView caption;
     private final LinearLayout cards;
     private final HorizontalScrollView scroller;
     private final List<View> cardViews = new ArrayList<>();
@@ -71,6 +78,7 @@ final class ContinueRow extends LinearLayout {
 
         TextView title = new TextView(context);
         title.setText(caption);
+        this.caption = title;
         title.setAllCaps(true);
         title.setLetterSpacing(0.25f);
         title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -90,8 +98,9 @@ final class ContinueRow extends LinearLayout {
         cards.setOrientation(HORIZONTAL);
         cards.setClipChildren(false);
         cards.setClipToPadding(false);
-        // Room for the focused card's zoom on every side, so the scroller does not clip it.
-        int pad = dp(12);
+        // Room for the focused card's zoom on every side (1.08x of 90dp needs 3.6dp), so the scroller does not
+        // clip it. 8dp rather than 12dp keeps the row inside a 1080p screen's clock-to-dock gap.
+        int pad = dp(8);
         cards.setPadding(pad, pad, pad, pad);
         scroller.addView(cards, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         addView(scroller, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -168,6 +177,16 @@ final class ContinueRow extends LinearLayout {
         applyVisibility();
     }
 
+    /** True while the owner wants the row on screen (the Jellyfin tile is focused in API mode). */
+    boolean isWanted() {
+        return wanted;
+    }
+
+    /** The list's name above the cards; the remote's Menu key changes it (Continuar / Recientes / Próximos). */
+    void setCaption(CharSequence text) {
+        caption.setText(text);
+    }
+
     void setFits(boolean fits) {
         if (this.fits == fits) return;
         this.fits = fits;
@@ -240,14 +259,14 @@ final class ContinueRow extends LinearLayout {
         View scrim = new View(ctx);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP,
                 new int[]{0xE6000000, 0x00000000}));
-        card.addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(60), Gravity.BOTTOM));
+        card.addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(80), Gravity.BOTTOM));
 
         LinearLayout text = new LinearLayout(ctx);
         text.setOrientation(VERTICAL);
-        text.setPadding(dp(10), 0, dp(10), dp(item.progress >= 0 ? 10 : 8));
-        TextView name = label(item.title, 14, 0xFFFFFFFF, R.string.font_medium);
+        text.setPadding(dp(12), 0, dp(12), dp(item.progress >= 0 ? 12 : 10));
+        TextView name = label(item.title, 17, 0xFFFFFFFF, R.string.font_medium);
         text.addView(name);
-        if (!item.subtitle.isEmpty()) text.addView(label(item.subtitle, 11, 0xB3FFFFFF, R.string.font_regular));
+        if (!item.subtitle.isEmpty()) text.addView(label(item.subtitle, 13, 0xB3FFFFFF, R.string.font_regular));
         card.addView(text, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
 
@@ -300,9 +319,23 @@ final class ContinueRow extends LinearLayout {
                     host.onRowDown();
                     return true;
                 case KeyEvent.KEYCODE_DPAD_LEFT:
+                    if (index == 0 && host.canCycleLists()) {
+                        // Left at the row's start: the previous list, so the D-pad alone reaches it.
+                        host.onRowMenu(-1);
+                        return true;
+                    }
                     return index == 0;                        // the row's start: stay put
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (index == cardViews.size() - 1 && host.canCycleLists()) {
+                        // Right at the row's end: the next list.
+                        host.onRowMenu(1);
+                        return true;
+                    }
                     return index == cardViews.size() - 1;     // the row's end: stay put
+                case KeyEvent.KEYCODE_MENU:
+                    // Xiaomi's remote sends this on its Menu (three lines) button; it cycles the list.
+                    host.onRowMenu(1);
+                    return true;
                 default:
                     return false;
             }
