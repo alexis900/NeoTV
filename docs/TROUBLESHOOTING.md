@@ -883,7 +883,7 @@ Things that bit us or contributors, so they don't bite you. Commands use `tools/
   If the clock then jumps an hour ahead in spring, a fixed offset keeps it right:
   `tools/tv.py 'cmd alarm set-timezone GMT+03:30'`. The same applies to any country whose rules
   changed after the firmware was built.
-- **The network pill says "Wi-Fi" instead of the network name** in this fork: it asks for neither
+- **The network pill says "Wi-Fi" instead of the network name** in NeoTV: it asks for neither
   `ACCESS_WIFI_STATE` nor location, so it cannot read the SSID (Android 10 needs fine location for that).
   The pill still shows Wi-Fi/Ethernet and whether the TV is online. To see the network name again, add
   `ACCESS_FINE_LOCATION` and `ACCESS_WIFI_STATE` back to the manifest and grant location:

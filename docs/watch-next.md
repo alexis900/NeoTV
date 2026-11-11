@@ -67,15 +67,15 @@ module's `AndroidManifest.xml`.
 
 ## In the launcher
 
-`continue_watching` in `config.xml` (off by default) shows these rows as a Continue watching row between the
-clock and the dock: `ContinueWatching.java` reads and filters the table (browsable rows only, engaged in the last
-60 days, a "continue" row under 95%, one card per show, ten at most, newest first), `ContinueRow.java` draws it.
-It reads once each time Home comes back, never on a timer. Upstream needs `READ_TV_LISTINGS`, which
-`launcher/build-and-install.sh` grants; this fork does not request it, because its row reads Jellyfin (below).
+`continue_watching` in `config.xml` (on by default) shows a Continue watching row between the clock and the
+dock: `ContinueWatching.java` reads and filters the table (browsable rows only, engaged in the last 60 days, a
+"continue" row under 95%, one card per show, ten at most, newest first), `ContinueRow.java` draws it. It reads
+once each time Home comes back, never on a timer. The Watch Next path needs `READ_TV_LISTINGS`; NeoTV does not
+request it, because its row reads Jellyfin (below).
 
-Only local posters are drawn (`content://`, `android.resource://`, `file://`): upstream's launcher has no
-`INTERNET` permission, so rows with `https://` posters get the app's own banner under the title instead. Local posters can
-still be slow, as Jellyfin's provider fetches each one from its server (about four seconds a poster on a Strong
+The Watch Next path draws only local posters (`content://`, `android.resource://`, `file://`): it does not fetch
+`https://` posters, so rows with them get the app's own banner under the title instead. Local posters can still be
+slow, as Jellyfin's provider fetches each one from its server (about four seconds a poster on a Strong
 LEAP-S3), so the row comes up with banners first and swaps each poster in as it arrives, with a small cache
 across Home resumes. A row's `intent_uri` is only followed when it points at the app that published the row.
 
@@ -84,11 +84,11 @@ Netflix (4); seven passed the filters.
 
 ## From Jellyfin with an API key
 
-This fork's row can also read the list from the Jellyfin server itself, without going through Watch Next: useful
-when the TV's client publishes no rows, or when the owner would rather not depend on it. That is why this fork
-adds the `INTERNET` permission and cleartext HTTP, and why it is not mergeable upstream.
+NeoTV reads the row from the Jellyfin server itself, without going through Watch Next: useful when the TV's
+client publishes no rows, or when the owner would rather not depend on it. That is why NeoTV adds the
+`INTERNET` permission and cleartext HTTP.
 
-The fork's permission set is deliberately small: `INTERNET` (the row), `ACCESS_NETWORK_STATE` (the network
+NeoTV's permission set is deliberately small: `INTERNET` (the row), `ACCESS_NETWORK_STATE` (the network
 pill's Wi-Fi/Ethernet and online/offline state) and the optional `WRITE_SECURE_SETTINGS` (only granted by the
 installer with `RESTORE_KEY_SERVICES=1`). It does not request `READ_TV_LISTINGS`, `ACCESS_WIFI_STATE` or
 location: the row no longer reads Watch Next, and the network pill says "Wi-Fi" instead of the SSID.
@@ -100,14 +100,12 @@ location: the row no longer reads Watch Next, and the network pill says "Wi-Fi" 
 
 Set them in `config.xml`, or better in a theme's `config.json` pushed from a computer (`tools/theme.sh`), so the
 key is not compiled into the APK and can be revoked in Jellyfin whenever you like. With either `jellyfin_url` or
-`jellyfin_api_key` empty the row stays hidden in this fork; the Watch Next fallback above would need
-`READ_TV_LISTINGS` added back to the manifest.
+`jellyfin_api_key` empty the row stays hidden in NeoTV.
 
-In this mode the row belongs to Jellyfin's own dock tile: it appears while that tile has focus and hides again
-when the owner moves to another app, so the shelf is not offered over Netflix or YouTube. The Watch Next row
-keeps its old rule, shown for any app in the dock's row. While the shelf is on screen it takes the space of the
-dock's big title (the tile and the row's caption already name the app), which makes the cards about 1.7 times
-larger than the Watch Next row's.
+The row belongs to Jellyfin's own dock tile: it appears while that tile has focus and hides again
+when the owner moves to another app, so the shelf is not offered over Netflix or YouTube. While the shelf is on
+screen it takes the space of the dock's big title (the tile and the row's caption already name the app), which
+makes the cards about 1.7 times larger than a plain row's.
 
 The remote's **Menu** key cycles the list the row reads: Continue watching (`/Items/Resume`), Recently added
 (`/Items/Latest`) and Next up (`/Shows/NextUp`). It works on Jellyfin's own tile (instead of the app menu) and on
@@ -121,4 +119,4 @@ and draws each poster from `GET /Items/{id}/Images/Primary` (the series' poster 
 item in the installed client: Jellyfin for Android TV takes the id in `StartupActivity`'s `ItemId` extra and
 Wholphin in `wholphin://view?itemId=`, the same way each client's own Watch Next cards do; Jellyfin for Android
 and Findroid have no such entry point, so their cards open the app.
-`http://` needs the cleartext flag this fork sets; `https://` works when the TV trusts the certificate.
+`http://` needs the cleartext flag NeoTV sets; `https://` works when the TV trusts the certificate.
