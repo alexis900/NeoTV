@@ -64,7 +64,7 @@ QUERIES_PACKAGE = re.compile(r'<package\s+android:name="([^"]+)"')
 EXEMPT = {
     "latitude": "docs/sky.md: the sky's place, a build setting no theme can move",
     "longitude": "docs/sky.md: the sky's place, a build setting no theme can move",
-    "continue_watching": "docs/watch-next.md: a build setting, as the row needs READ_TV_LISTINGS granted at install",
+    "continue_watching": "docs/watch-next.md: a build setting, as this fork reads the row from Jellyfin",
     "jellyfin_url": "docs/watch-next.md: the Jellyfin server the row reads from, a build setting like continue_watching",
     "jellyfin_api_key": "docs/watch-next.md: that server's API key, a build setting kept out of the shared Keys table",
     "jellyfin_user": "docs/watch-next.md: the account the row reads, a build setting",

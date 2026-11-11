@@ -70,8 +70,8 @@ module's `AndroidManifest.xml`.
 `continue_watching` in `config.xml` (off by default) shows these rows as a Continue watching row between the
 clock and the dock: `ContinueWatching.java` reads and filters the table (browsable rows only, engaged in the last
 60 days, a "continue" row under 95%, one card per show, ten at most, newest first), `ContinueRow.java` draws it.
-It reads once each time Home comes back, never on a timer, and needs `READ_TV_LISTINGS`, which
-`launcher/build-and-install.sh` grants.
+It reads once each time Home comes back, never on a timer. Upstream needs `READ_TV_LISTINGS`, which
+`launcher/build-and-install.sh` grants; this fork does not request it, because its row reads Jellyfin (below).
 
 Only local posters are drawn (`content://`, `android.resource://`, `file://`): upstream's launcher has no
 `INTERNET` permission, so rows with `https://` posters get the app's own banner under the title instead. Local posters can
@@ -88,6 +88,11 @@ This fork's row can also read the list from the Jellyfin server itself, without 
 when the TV's client publishes no rows, or when the owner would rather not depend on it. That is why this fork
 adds the `INTERNET` permission and cleartext HTTP, and why it is not mergeable upstream.
 
+The fork's permission set is deliberately small: `INTERNET` (the row), `ACCESS_NETWORK_STATE` (the network
+pill's Wi-Fi/Ethernet and online/offline state) and the optional `WRITE_SECURE_SETTINGS` (only granted by the
+installer with `RESTORE_KEY_SERVICES=1`). It does not request `READ_TV_LISTINGS`, `ACCESS_WIFI_STATE` or
+location: the row no longer reads Watch Next, and the network pill says "Wi-Fi" instead of the SSID.
+
 - `jellyfin_url`: the server, for example `http://192.168.1.50:8096`.
 - `jellyfin_api_key`: a key from Jellyfin's Dashboard → API Keys → +. It travels in the `Authorization` header
   (and `X-Emby-Token`), never in a URL or a log line.
@@ -95,7 +100,8 @@ adds the `INTERNET` permission and cleartext HTTP, and why it is not mergeable u
 
 Set them in `config.xml`, or better in a theme's `config.json` pushed from a computer (`tools/theme.sh`), so the
 key is not compiled into the APK and can be revoked in Jellyfin whenever you like. With either `jellyfin_url` or
-`jellyfin_api_key` empty, the row reads Watch Next as above.
+`jellyfin_api_key` empty the row stays hidden in this fork; the Watch Next fallback above would need
+`READ_TV_LISTINGS` added back to the manifest.
 
 In this mode the row belongs to Jellyfin's own dock tile: it appears while that tile has focus and hides again
 when the owner moves to another app, so the shelf is not offered over Netflix or YouTube. The Watch Next row

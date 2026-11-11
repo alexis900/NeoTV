@@ -31,13 +31,12 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
- * The Continue watching row's data: the system's Watch Next table (docs/watch-next.md), read once per Home
- * resume off the main thread. Needs READ_TV_LISTINGS (build-and-install grants it); without it the query
- * throws and the row stays hidden.
+ * The Continue watching row's data (docs/watch-next.md), read once per Home resume off the main thread.
+ * This fork reads a Jellyfin server's API ({@link #loadJellyfin}); the system's Watch Next table
+ * ({@link #load}) remains for builds that add READ_TV_LISTINGS back, and stays hidden without it.
  *
- * Only local posters are loaded (content://, android.resource://, file://). Most apps publish https://
- * poster URLs on their own CDNs; this app has no INTERNET permission, so those rows get a text card instead
- * and Home never makes a network request.
+ * The Jellyfin posters are fetched from that server with the API key in a header. The Watch Next path only
+ * loads local posters (content://, android.resource://, file://), so it makes no network request.
  */
 final class ContinueWatching {
     static final String TAG = "TvHomeContinue";
@@ -125,7 +124,8 @@ final class ContinueWatching {
                 items.add(item);
             }
         } catch (Exception e) {
-            // SecurityException without READ_TV_LISTINGS, or a provider that is missing or broken.
+            // SecurityException when READ_TV_LISTINGS is not declared (this fork), or a provider that is
+            // missing or broken.
             Log.w(TAG, "Watch Next not readable: " + e);
             return new ArrayList<>();
         }

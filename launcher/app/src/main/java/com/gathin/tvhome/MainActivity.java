@@ -37,8 +37,6 @@ import android.net.Network;
 import android.net.NetworkCapabilities;
 import android.net.NetworkRequest;
 import android.net.Uri;
-import android.net.wifi.WifiInfo;
-import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -1125,8 +1123,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (cinematic && heroMeta != null && lastFocused >= 0 && lastFocused < adapter.appCount()) updateHeroMeta(lastFocused);
         // The network and Inputs pills keep their state while Home is in the background, and callbacks update them
         // when the network or the inputs change, so this refresh only catches anything missed. Its binder calls
-        // (about 7 ms on a TCL C755, most of it WifiManager.getConnectionInfo) would hold up the first frame back
-        // on Home, so after the first resume it runs once that frame is drawn.
+        // (about 7 ms on a TCL C755) would hold up the first frame back on Home, so after the first resume it runs
+        // once that frame is drawn.
         if (pillsShown) {
             refreshPillsAfterNextDraw();
         } else {
@@ -3168,14 +3166,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 flame = 4;
                 steady = true;
             } else if (wifi) {
-                WifiManager wm = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
-                WifiInfo info = wm != null ? wm.getConnectionInfo() : null;
-                String ssid = info != null ? info.getSSID() : null;
-                flame = info != null ? Math.max(1, Math.min(4, WifiManager.calculateSignalLevel(info.getRssi(), 5))) : 3;
-                if (ssid != null) {
-                    ssid = ssid.replace("\"", "").trim();
-                    if (!ssid.isEmpty() && !ssid.contains("unknown") && !ssid.equals("0x")) text = ssid;
-                }
+                // The fork does not hold ACCESS_WIFI_STATE or location, so it cannot read the SSID or the
+                // signal; the pill says "Wi-Fi" and the festive light takes the online branch below.
+                flame = 3;
             }
         } catch (Exception ignored) {
         }
@@ -3533,8 +3526,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      *  itself, ahead of the standard way, for firmware that answers the channel URI with "unsupported"
      *  (Redmi X65, MiTV-NSOP0: com.xiaomi.mitv.tvplayer/.ExternalSourceActivity). With `input_uri_scheme` set (YaOS: live-tv) the same URI goes out
      *  with that scheme and no MIME type. A player guarded by a permission this build does not declare
-     *  throws SecurityException, which used to take Home down with it (YaOS before the manifest asked
-     *  for ACCESS_TV_SOURCE). */
+     *  throws SecurityException; every start below catches it and falls through to the next way. This fork
+     *  does not request ACCESS_TV_SOURCE, so a YaOS set loses the vendor live player but Home stays up. */
     private void openInput(String inputId) {
         // A CEC device is a child input of its HDMI port; the vendor source number belongs to the port
         // (MiTV-MFFU0). Only that lookup uses the parent: the generic path below still opens the child.
