@@ -203,6 +203,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private String jellyfinUrl = "", jellyfinApiKey = "", jellyfinUser = "";
     /** Which Jellyfin list the row shows (ContinueWatching.LIST_*); the remote's Menu key cycles it. */
     private int continueList = ContinueWatching.LIST_RESUME;
+    /** A Jellyfin read in flight, and whether the last one failed: at boot the network can arrive after Home. */
+    private boolean continueLoading, continueLoadFailed;
+    private int continueRetries;
+    private Runnable continueRetry;
+    private static final int CONTINUE_RETRY_LIMIT = 5;
     private static final String CONTINUE_LIST_KEY = "continue_list";
     private List<RaceWeekend.Race> raceCalendar;
     private View racePanel;
@@ -374,7 +379,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private final ConnectivityManager.NetworkCallback networkCallback = new ConnectivityManager.NetworkCallback() {
         @Override
         public void onAvailable(@NonNull Network network) {
-            handler.post(MainActivity.this::updateWifiLabel);
+            handler.post(() -> {
+                updateWifiLabel();
+                // At boot Wi-Fi often connects after Home's first resume: read the Jellyfin row again once it
+                // does, or the first screen of the day stays without cards until an app switch.
+                if (continueApiMode() && continueRow != null && continueLoadFailed) {
+                    cancelContinueRetry();
+                    continueRetries = 0;
+                    loadContinueRow(continueList, 1, 1);
+                }
+            });
         }
 
         @Override
@@ -1318,6 +1332,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        cancelContinueRetry();
         // No UP reaches a paused Home, so a vendor-key hold it saw go down would still open its app later.
         // Only Home's own share is dropped: a key service that saw the same DOWN keeps its hold.
         RemoteKeys.release(this);
@@ -1840,9 +1855,17 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public void onTileFocused(int position, View card) {
+        boolean focusChanged = lastFocused != position;
         lastFocused = position;
         if (continueRow != null) {
             continueRow.setWanted(position < COLUMNS && rowOfferedAt(position));
+            // A failed read at boot retries when the owner comes back to Jellyfin's tile, without waiting for
+            // the next resume. Same-tile layout passes must not hammer a server that is still off.
+            if (continueLoadFailed && focusChanged && position < COLUMNS && rowOfferedAt(position)) {
+                cancelContinueRetry();
+                continueRetries = 0;
+                loadContinueRow(continueList, 1, 1);
+            }
             layoutContinueRow();
             updateTopBarDown();
         }
@@ -2375,17 +2398,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         continueRow.setFits(rowBottom <= heroTop);
     }
 
-    /** Once per resume, off the main thread: a provider query and a few local posters. No polling. */
+    /** Once per resume, off the main thread: a provider query and a few local posters. */
     private void loadContinueRow() {
+        cancelContinueRetry();
+        continueRetries = 0;
         loadContinueRow(continueList, ContinueWatching.LIST_COUNT, 1);
     }
 
     /**
      * Loads one Jellyfin list. An empty one steps to the next in the direction the owner was moving (Next up
      * stays empty until a series has an unwatched episode), so Menu or an arrow never leaves an empty shelf.
+     * A failed read (the server still booting, or no network yet) is retried with a backoff instead of leaving
+     * the first Home of the day without cards until an app switch.
      */
     private void loadContinueRow(int list, int attemptsLeft, int step) {
-        if (continueRow == null) return;
+        if (continueRow == null || continueLoading) return;
+        continueLoading = true;
         Context app = getApplicationContext();
         String url = jellyfinUrl, key = jellyfinApiKey, user = jellyfinUser;
         boolean api = !url.isEmpty() && !key.isEmpty();
@@ -2393,10 +2421,20 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             List<ContinueWatching.Item> items = api
                     ? ContinueWatching.loadJellyfin(app, url, key, user, list)
                     : ContinueWatching.load(app);
+            if (api && items == null) {
+                handler.post(() -> {
+                    continueLoading = false;
+                    if (continueRow == null || isFinishing() || isDestroyed()) return;
+                    continueLoadFailed = true;
+                    scheduleContinueRetry(list);
+                });
+                return;
+            }
             if (api && items.isEmpty() && list != ContinueWatching.LIST_RESUME && attemptsLeft > 1) {
                 int next = (list + step % ContinueWatching.LIST_COUNT + ContinueWatching.LIST_COUNT)
                         % ContinueWatching.LIST_COUNT;
                 handler.post(() -> {
+                    continueLoading = false;
                     if (continueRow == null || isFinishing() || isDestroyed()) return;
                     continueList = next;
                     rememberContinueList();
@@ -2406,7 +2444,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 return;
             }
             handler.post(() -> {
+                continueLoading = false;
                 if (continueRow == null || isFinishing() || isDestroyed()) return;
+                continueLoadFailed = false;
+                continueRetries = 0;
+                cancelContinueRetry();
                 continueRow.setItems(items);
                 // The row is now on screen: its shelf needs the big dock title's space.
                 if (continueRow.isShowing()) hideHero();
@@ -2420,6 +2462,29 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 });
             }
         }, "continue-watching").start();
+    }
+
+    /** 3 s, 6 s, 12 s, 24 s, 48 s: enough for a TV and its Jellyfin server to finish booting. */
+    private void scheduleContinueRetry(int list) {
+        if (!resumed || continueRow == null || !continueApiMode() || continueRetries >= CONTINUE_RETRY_LIMIT) {
+            return;
+        }
+        long delay = 3000L << Math.min(continueRetries, 4);
+        continueRetries++;
+        cancelContinueRetry();
+        continueRetry = () -> {
+            continueRetry = null;
+            if (resumed && continueRow != null && continueApiMode() && continueLoadFailed) {
+                loadContinueRow(list, 1, 1);
+            }
+        };
+        handler.postDelayed(continueRetry, delay);
+    }
+
+    private void cancelContinueRetry() {
+        if (continueRetry == null) return;
+        handler.removeCallbacks(continueRetry);
+        continueRetry = null;
     }
 
     private String continueCaption(int list) {

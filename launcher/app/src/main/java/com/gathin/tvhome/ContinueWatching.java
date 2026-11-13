@@ -162,7 +162,9 @@ final class ContinueWatching {
     /**
      * The row read from the Jellyfin server itself (config.xml jellyfin_url + jellyfin_api_key), for a TV whose
      * client does not publish Watch Next rows, or when the owner would rather not depend on one. Runs on a
-     * background thread; never throws. The key only ever travels to that server, in a header.
+     * background thread; never throws. Returns null when the server could not be read (off, no network yet, a
+     * reply that is not Jellyfin's), so the caller can retry; an empty list means the server answered with none.
+     * The key only ever travels to that server, in a header.
      */
     static List<Item> loadJellyfin(Context context, String base, String key, String user) {
         return loadJellyfin(context, base, key, user, LIST_RESUME);
@@ -230,7 +232,7 @@ final class ContinueWatching {
         } catch (Exception e) {
             // A wrong key (401), a server that is off, or a reply that is not Jellyfin's.
             Log.w(TAG, "Jellyfin not readable at " + root + ": " + e);
-            return new ArrayList<>();
+            return null;
         }
         return items;
     }

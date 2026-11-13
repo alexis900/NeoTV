@@ -83,8 +83,12 @@ module's `AndroidManifest.xml`.
 `continue_watching` in `config.xml` (on by default) shows a Continue watching row between the clock and the
 dock: `ContinueWatching.java` reads and filters the table (browsable rows only, engaged in the last 60 days, a
 "continue" row under 95%, one card per show, ten at most, newest first), `ContinueRow.java` draws it. It reads
-once each time Home comes back, never on a timer. The Watch Next path needs `READ_TV_LISTINGS`; NeoTV does not
-request it, because its row reads Jellyfin (below).
+once each time Home comes back and retries only a failed read with a backoff, never polling a working server.
+The Watch Next path needs `READ_TV_LISTINGS`; NeoTV does not request it, because its row reads Jellyfin (below).
+
+At boot the TV can reach Home before its Wi-Fi or before the Jellyfin server is ready. A failed read is retried
+after 3, 6, 12, 24 and 48 seconds, and again as soon as the network comes up or Jellyfin's tile regains focus,
+so the first screen of the day does not need an app switch to show the row.
 
 The Watch Next path draws only local posters (`content://`, `android.resource://`, `file://`): it does not fetch
 `https://` posters, so rows with them get the app's own banner under the title instead. Local posters can still be

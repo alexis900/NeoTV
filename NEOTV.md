@@ -42,6 +42,10 @@ A card opens the item in the installed client: Jellyfin for Android TV takes the
 and Findroid have no such entry point, so their cards open the app. `http://` needs the cleartext
 flag NeoTV sets; `https://` works when the TV trusts the certificate.
 
+At boot the TV can reach Home before its Wi-Fi or before the Jellyfin server is ready. A failed read
+is retried after 3, 6, 12, 24 and 48 seconds, and again as soon as the network comes up or Jellyfin's
+tile regains focus, so the first screen of the day does not need an app switch to show the row.
+
 ## Dock and hidden apps
 
 The dock holds Jellyfin, YouTube, Atresplayer and Tivify. Netflix, Prime Video, the Xiaomi
@@ -66,7 +70,7 @@ network name. The pill still shows Wi-Fi/Ethernet and whether the TV is online.
 
 ## Size
 
-The release APK is about 584 KB (597,941 B). `.github/workflows/ci.yml` checks it against 589,824 B
+The release APK is about 584 KB (598,345 B). `.github/workflows/ci.yml` checks it against 589,824 B
 (576 KB) and will fail: raise that limit in the workflow, or build locally. The Jellyfin row and its
 HTTP client are the difference from a plain launcher build.
 
