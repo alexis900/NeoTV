@@ -325,9 +325,13 @@
     <!-- A reorder button (two arrows) in the top bar. Off by default: reordering is also in the Settings
          button's long-press menu, so it needs no extra button on screen. -->
     <bool name="reorder_button">false</bool>
-    <!-- Wi-Fi and Settings as round icon-only buttons (the network name moves to the talkback description);
-         Inputs keeps its label. -->
+    <!-- Wi-Fi as a round icon-only button (the network name moves to the talkback description); Inputs keeps its
+         label and Settings has its own icon_only_settings. -->
     <bool name="icon_only_buttons">false</bool>
+    <!-- The Settings gear as a round icon button too (the label, "Settings" or "Launcher settings", moves to the
+         talkback description). On by default: the gear alone reads as settings. A theme can set
+         "icon_only_settings": false to keep the label; top_menu already shows a lone gear. -->
+    <bool name="icon_only_settings">true</bool>
     <!-- The Inputs pill as a round icon button too (the label moves to the talkback description). -->
     <bool name="icon_only_inputs">false</bool>
     <!-- With vpn_pill, the VPN pill as a round icon button too: an open lock on the plain glass button while no VPN is

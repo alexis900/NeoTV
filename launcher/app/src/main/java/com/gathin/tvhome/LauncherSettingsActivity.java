@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.util.Log;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.LinearLayout;
@@ -168,6 +169,8 @@ public final class LauncherSettingsActivity extends Activity {
             changed();
             refresh();
         });
+        findViewById(R.id.backupSaveChoice).setOnClickListener(v -> showSaveBackup());
+        findViewById(R.id.backupRestoreChoice).setOnClickListener(v -> showRestorePicker());
         findViewById(R.id.defaultHomeChoice).setOnClickListener(v ->
                 open(new Intent(this, HomeSettingsActivity.class)));
         findViewById(R.id.tvSettingsChoice).setOnClickListener(v ->
@@ -181,6 +184,92 @@ public final class LauncherSettingsActivity extends Activity {
         LinearLayout row = (LinearLayout) views[0].getParent();
         row.removeAllViews();
         for (int i = views.length - 1; i >= 0; i--) row.addView(views[i]);
+    }
+
+    /** One JSON file with the theme and every on-TV choice; it holds the Jellyfin key, so it is confirmed. */
+    private void showSaveBackup() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_save)
+                .setMessage(R.string.backup_save_warning)
+                .setPositiveButton(R.string.backup_save, (dialog, which) -> {
+                    new Thread(() -> {
+                        SettingsBackup.Saved saved = null;
+                        try {
+                            saved = SettingsBackup.save(getApplicationContext());
+                        } catch (Exception e) {
+                            Log.w("TvHomeBackup", "could not save the backup", e);
+                        }
+                        final SettingsBackup.Saved result = saved;
+                        runOnUiThread(() -> {
+                            if (isFinishing() || isDestroyed()) return;
+                            if (result == null) {
+                                Toast.makeText(this, R.string.backup_failed, Toast.LENGTH_LONG).show();
+                                return;
+                            }
+                            String where = result.downloads
+                                    ? getString(R.string.backup_in_downloads) + "/" + result.name
+                                    : result.path;
+                            Toast.makeText(this, getString(R.string.backup_saved, where),
+                                    Toast.LENGTH_LONG).show();
+                        });
+                    }, "settings-backup").start();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** The backups on the TV: Downloads first (that copy survives an uninstall), then the launcher's own. */
+    private void showRestorePicker() {
+        List<SettingsBackup.Entry> entries = SettingsBackup.list(this);
+        if (entries.isEmpty()) {
+            File folder = SettingsBackup.dir(this);
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.backup_restore)
+                    .setMessage(getString(R.string.backup_none,
+                            folder == null ? getString(R.string.backup_in_downloads) : folder.getAbsolutePath()))
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+        String[] labels = new String[entries.size()];
+        for (int i = 0; i < entries.size(); i++) {
+            SettingsBackup.Entry entry = entries.get(i);
+            labels[i] = getString(R.string.backup_entry, entry.when,
+                    getString(entry.downloads ? R.string.backup_in_downloads : R.string.backup_in_app));
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_restore)
+                .setSingleChoiceItems(labels, -1, (dialog, which) -> {
+                    dialog.dismiss();
+                    confirmRestore(entries.get(which));
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void confirmRestore(SettingsBackup.Entry entry) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.backup_restore)
+                .setMessage(getString(R.string.backup_restore_warning, entry.name))
+                .setPositiveButton(R.string.backup_restore, (dialog, which) -> restore(entry))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void restore(SettingsBackup.Entry entry) {
+        new Thread(() -> {
+            String error = SettingsBackup.restore(getApplicationContext(), entry.text);
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (error != null) {
+                    Toast.makeText(this, R.string.backup_restore_failed, Toast.LENGTH_LONG).show();
+                    return;
+                }
+                Toast.makeText(this, R.string.backup_restored, Toast.LENGTH_SHORT).show();
+                // The restore bumped the change count, so Home rebuilds with it on resume.
+                finish();
+            });
+        }, "settings-restore").start();
     }
 
     private void showWallpaperPicker() {

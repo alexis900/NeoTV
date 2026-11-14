@@ -52,6 +52,16 @@ The dock holds Jellyfin, YouTube, Atresplayer and Tivify. Netflix, Prime Video, 
 preloaded apps (PatchWall, Gallery, MiTV Plus, Dream and SmartShare), YouTube Music and a
 button-mapper app are hidden. This is theme configuration, not a change to the launcher's defaults.
 
+## Settings backup
+
+Launcher settings → **Save a backup** writes `neotv-settings-<date>.json` to Downloads, with a copy in
+the launcher's own folder: the theme's `config.json`, the dock, the hidden apps, the Jellyfin server
+and every choice made on the TV. **Restore a backup** lists those files, Downloads first because that
+copy survives an uninstall, and writes both halves back; Home rebuilds with them.
+
+Wallpapers are not included. The file holds the Jellyfin API key, so keep it private: the copy in
+Downloads sits outside the app's own folder.
+
 ## Permissions
 
 The manifest asks for three permissions, and the installer grants the third only when asked:

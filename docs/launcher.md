@@ -66,6 +66,12 @@ The launcher's own page has these rows, top to bottom:
   time Home comes up after the TV starts. Once per boot, so Home and Back still reach the launcher.
 - **Follow theme (reset on-TV choices)**, which clears every choice above. Pushing or resetting a theme
   clears them too.
+- **Save a backup** writes one JSON file to Downloads (and a copy in the launcher's own folder) with the
+  theme, the dock, the hidden apps, the Jellyfin server and every choice on this page. Wallpapers are not
+  included, and the file holds the Jellyfin API key, so keep it private.
+- **Restore a backup** lists the backups in Downloads and in the launcher's folder, newest first, and
+  replaces the theme and every choice with the one picked. Home rebuilds with them; the file has to be a
+  `neotv-settings-*.json` written by Save a backup.
 - **Choose default home** opens Android's home picker, and **TV system settings** the TV's own settings
   page.
 

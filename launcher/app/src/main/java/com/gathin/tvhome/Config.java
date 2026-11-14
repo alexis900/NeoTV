@@ -134,6 +134,8 @@ final class Config {
     final boolean iconOnlyInputs;
     /** With vpn_pill, the VPN pill as a round lock button (config.xml / theme icon_only_vpn). */
     final boolean iconOnlyVpn;
+    /** The Settings gear as a round icon button (config.xml / theme icon_only_settings). */
+    final boolean iconOnlySettings;
     /** Back on the Home screen opens the clock screensaver instead of doing nothing (config.xml / theme back_opens_clock). */
     final boolean backOpensClock;
     /** The ambient glow takes a new app's colour in one frame instead of dipping and fading (config.xml / theme glow_snap). */
@@ -303,7 +305,8 @@ final class Config {
                    boolean handleViewInputs, boolean tileMenu, boolean dockEvenPadding, boolean dockBand, boolean cinematicDots, boolean cinematicWhiteFocus, boolean wifiStatusColor, int cinematicScrim, int cinematicArt,
                    Map<String, Set<String>> wallpaperMoods, boolean gamepadPassthrough, boolean consumeVolumeKeys, boolean homeIgnoreChannelKeys, boolean powerOnHome, boolean homeLongPressHome, boolean wifiStatusWarnings, List<String> topBarApps, boolean showGreeting, boolean headerWhite, boolean clockWallpaper, int clockWallpaperDim, boolean clockGlow, String glassStyle, boolean singleRow, boolean dockBandAll, boolean lunarDate, int lunarUtcOffset, boolean dateBelowClock, boolean vpnPill, String locale, boolean powerOnHomeAlways, boolean inputsConnectedOnly, boolean inputsCecStateOnly,
                    int openOnStartNetworkWait, boolean openOnStartOnWake, boolean iconOnlyVpn, String clockFormat, boolean backOpensClock, boolean glowSnap,
-                   boolean settingsKeyClearTask, String jellyfinUrl, String jellyfinApiKey, String jellyfinUser) {
+                   boolean settingsKeyClearTask, String jellyfinUrl, String jellyfinApiKey, String jellyfinUser,
+                   boolean iconOnlySettings) {
         this.jellyfinUrl = jellyfinUrl;
         this.jellyfinApiKey = jellyfinApiKey;
         this.jellyfinUser = jellyfinUser;
@@ -356,6 +359,7 @@ final class Config {
         this.iconOnlyButtons = iconOnlyButtons;
         this.iconOnlyInputs = iconOnlyInputs;
         this.iconOnlyVpn = iconOnlyVpn;
+        this.iconOnlySettings = iconOnlySettings;
         this.backOpensClock = backOpensClock;
         this.glowSnap = glowSnap;
         this.settingsKeyClearTask = settingsKeyClearTask;
@@ -489,6 +493,7 @@ final class Config {
         boolean iconOnlyButtons = res.getBoolean(R.bool.icon_only_buttons);
         boolean iconOnlyInputs = res.getBoolean(R.bool.icon_only_inputs);
         boolean iconOnlyVpn = res.getBoolean(R.bool.icon_only_vpn);
+        boolean iconOnlySettings = res.getBoolean(R.bool.icon_only_settings);
         boolean backOpensClock = res.getBoolean(R.bool.back_opens_clock);
         boolean glowSnap = res.getBoolean(R.bool.glow_snap);
         boolean settingsKeyClearTask = res.getBoolean(R.bool.settings_key_clear_task);
@@ -608,6 +613,7 @@ final class Config {
             iconOnlyButtons = bool(json, "icon_only_buttons", iconOnlyButtons);
             iconOnlyInputs = bool(json, "icon_only_inputs", iconOnlyInputs);
             iconOnlyVpn = bool(json, "icon_only_vpn", iconOnlyVpn);
+            iconOnlySettings = bool(json, "icon_only_settings", iconOnlySettings);
             backOpensClock = bool(json, "back_opens_clock", backOpensClock);
             glowSnap = bool(json, "glow_snap", glowSnap);
             settingsKeyClearTask = bool(json, "settings_key_clear_task", settingsKeyClearTask);
@@ -742,7 +748,7 @@ final class Config {
                 Math.max(0, Math.min(90, clockWallpaperDim)), clockGlow, glassStyle, singleRow && dockRow, dockBandAll, lunar, lunarOffset,
                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, inputsCecStateOnly,
                 Math.max(0, Math.min(600, openOnStartNetworkWait)), openOnStartOnWake, iconOnlyVpn, clockFormat, backOpensClock, glowSnap,
-                settingsKeyClearTask, jellyfinUrl, jellyfinApiKey, jellyfinUser);
+                settingsKeyClearTask, jellyfinUrl, jellyfinApiKey, jellyfinUser, iconOnlySettings);
     }
 
     /**
@@ -773,6 +779,19 @@ final class Config {
                     r.optString("name", "Grand Prix").trim(), r.optString("place", "").trim(), parsed));
         }
         return races;
+    }
+
+    /**
+     * A backup restore has just written config.json: remember it as the theme the TV's choices belong to.
+     * Without this the next load reads the new file stamp as a theme push and clears those choices
+     * ({@link #syncThemeChoices}).
+     */
+    static void adoptTheme(Context ctx) {
+        File dir = dir(ctx);
+        File config = dir == null ? null : new File(dir, FILE_NAME);
+        File revision = dir == null ? null : new File(dir, THEME_REVISION_NAME);
+        ctx.getSharedPreferences(SETTINGS_NAME, Context.MODE_PRIVATE).edit()
+                .putString(THEME_SIGNATURE_KEY, fileStamp(config) + ":" + revisionToken(revision)).commit();
     }
 
     private static void syncThemeChoices(SharedPreferences choices, File dir, File config) {
